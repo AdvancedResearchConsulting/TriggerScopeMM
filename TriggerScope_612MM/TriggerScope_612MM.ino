@@ -130,7 +130,7 @@ Contact Advanced Research Consulting for Driver libraries! www.advancedresearch.
 #define NR_DO_STATES 1200
 
 
-String idname = "ARC TRIGGERSCOPE 16 R3C Board 4 v.611-MM";
+String idname = "ARC TRIGGERSCOPE 16 R3C Board 4 v.612-MM";
 
 const char* helpString = "Available commands: \r\n"
   "SAOn-s - sets DACs. n = DAC number (1-16), s = value (0-65535)\r\n"
@@ -1235,12 +1235,13 @@ inline void setPinGroup(byte pinGroup, byte value)
       else if( b+adder > 8) {
         mcp.digitalWrite(ttl[b+adder],(((value) >> (b)) & 0x01));
       }
-      
+
+      /*
       Serial.print("TTL " );
       Serial.print(b + adder);
       Serial.print(" , ");
       Serial.println((((value) >> (b)) & 0x01));
-      
+      */
   }
   if (pinGroup == 1) 
   {

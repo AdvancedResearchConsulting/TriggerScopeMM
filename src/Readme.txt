@@ -1,4 +1,4 @@
-Overdrive modificaitons per development w/ S. Mehta & I. Ivanov. 
+Overdrive modifications per development w/ S. Mehta & I. Ivanov. 
 
 INSTALL:
 - Drop compiled driver into x64 OS enabled micromanager 2.0 Gamma install directory. 

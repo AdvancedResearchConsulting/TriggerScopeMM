@@ -20,6 +20,7 @@ Serial #'s are matched to firmware as specified below.
 
 SN# 1932-1970 should use Nico's Direct branch here -> https://github.com/micro-manager/TriggerScopeMM/tree/main/src/TriggerScope_V3
 SN# 1971-2117 should use the -V4 folder in this repo.
+
 SN# 2117 + should use the -V4B folder in this repo. 
 
 For more information on serial # or if you have errors please contact ARC at advancedreseach-consulting.com

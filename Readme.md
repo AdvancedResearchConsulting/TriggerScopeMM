@@ -15,12 +15,12 @@ Modifications to original firmware for this version include:
 
  - See command info using Triggerscope "?\n" command for details on use. 
 
-***Be careful which firmware is used****
+*Be careful which firmware is used*
 Serial #'s are matched to firmware as specified below. 
 
-# 1932-1970 should use Nico's Direct branch here -> https://github.com/micro-manager/TriggerScopeMM/tree/main/src/TriggerScope_V3
-# 1971-2117 should use the -V4 folder in this repo.
-# 2117 + should use the -V4B folder in this repo. 
+SN# 1932-1970 should use Nico's Direct branch here -> https://github.com/micro-manager/TriggerScopeMM/tree/main/src/TriggerScope_V3
+SN# 1971-2117 should use the -V4 folder in this repo.
+SN# 2117 + should use the -V4B folder in this repo. 
 
 For more information on serial # or if you have errors please contact ARC at advancedreseach-consulting.com
 Special thanks to the Mehta Lab @ Chan Zuckerburg Bio Hub for supporting these extensions! 

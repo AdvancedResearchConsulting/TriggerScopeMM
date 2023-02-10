@@ -1,0 +1,646 @@
+///////////////////////////////////////////////////////////////////////////////
+// FILE:          TriggerScopeMM.cpp
+// PROJECT:       Micro-Manager
+// SUBSYSTEM:     DeviceAdapters
+//-----------------------------------------------------------------------------
+// DESCRIPTION:   Implements the ARC TriggerScope device adapter.
+//				  See http://www.trggerscope.com
+//                
+// AUTHOR:        Austin Blanco, 21 July 2015
+//                Nico Stuurman, 3 Sept 2020                  
+//
+// COPYRIGHT:     Advanced Research Consulting. (2014-2015)
+//                Regents of the University of California (2020)
+//
+// LICENSE:       This file is distributed in the hope that it will be useful,
+//                but WITHOUT ANY WARRANTY; without even the implied warranty
+//                of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+//
+//                IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+//                CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+//                INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES.
+//
+
+#include "TriggerScopeMM.h"
+#include <cstdio>
+#include <string>
+#include <math.h>
+#include "ModuleInterface.h"
+#include "../../MMCore/Error.h"
+#include <sstream>
+#include <algorithm>
+#include <iostream>
+
+using namespace std;
+
+
+/**** CTriggerScopeMMDAC ****/
+
+CTriggerScopeMMDAC::CTriggerScopeMMDAC(int dacNr) :
+   voltRangeS_(g_DACR1)
+{
+
+    CTriggerScopeMMHub* pHub_;
+
+    sequenceOn_ = true;
+    sequenceTransitionOnRising_ = true;
+    voltrange_ = 0;
+    nrEvents_ = 0;
+        
+    bTS16_ = false;
+   dacNr_ = dacNr;
+   initialized_ = false;
+   volts_ = 0.0;
+   minV_ = 0.0;
+   maxV_ = 10.0;
+   busy_ = false;
+   gateOpen_ = true;
+   blanking_ = false;
+   blankOnLow_ = true;
+   gatedVolts_ = 0.0;
+   
+   ODVolts_ = 0;
+   ODDelay_ = 0;
+   pHub_ = NULL;
+
+   pVoltsProp_ = NULL;
+   pODDelayProp_ = NULL;
+   pODVoltsProp_ = NULL;
+
+   sequence_.clear();
+   seqODDelay_.clear();
+   seqODVolts_.clear();
+   seqCleared_ = 0;
+
+   const char* vRange = "Voltage Range";
+   CPropertyAction* pAct = new CPropertyAction (this, &CTriggerScopeMMDAC::OnVoltRange);
+   CreateProperty(vRange, g_DACR1, MM::String, false, pAct, true); 
+
+   AddAllowedValue(vRange, g_DACR1);
+   AddAllowedValue(vRange, g_DACR2);
+   AddAllowedValue(vRange, g_DACR3);
+   AddAllowedValue(vRange, g_DACR4);
+   AddAllowedValue(vRange, g_DACR5);
+}
+
+
+void CTriggerScopeMMDAC::GetName(char* name) const
+{
+   CDeviceUtils::CopyLimitedString(name, g_TriggerScopeMMDACDeviceName);
+   snprintf(&name[strlen(name)-2], 3, "%02d", dacNr_);
+}
+
+
+int CTriggerScopeMMDAC::Initialize()
+{
+   if (initialized_)
+      return DEVICE_OK;
+
+   pHub_ = static_cast<CTriggerScopeMMHub*>(GetParentHub());
+   if (!pHub_ || !pHub_->IsInitialized()) {
+      return ERR_NO_PORT_SET;
+   }
+   bTS16_ = pHub_->GetTS16();
+   char hubLabel[MM::MaxStrLength];
+   pHub_->GetLabel(hubLabel);
+   SetParentID(hubLabel); // for backward comp.
+
+   std::ostringstream os;
+   os << "SAR" << dacNr_ << "-" << (int) voltrange_;
+   int ret = pHub_->SendAndReceive(os.str().c_str());
+
+   std::string tmp;
+   std::istringstream is(voltRangeS_);
+   is >> minV_;
+   is >> tmp;  // reads away the dash
+   is >> maxV_;
+
+   // Query number of analog output states
+   std::ostringstream oss;
+   oss << "PAN" << dacNr_;
+   std::string answer;
+   int nRet = pHub_->SendAndReceive(oss.str().c_str(), answer);
+   if (nRet != DEVICE_OK)
+      return nRet;
+   // answer looks like !PAN1-560 or !PAN11-560
+   std::string token = answer.substr(answer.find("-") + 1);
+   std::stringstream as (token);
+   as >> nrEvents_;
+
+   CPropertyAction* pAct = new CPropertyAction (this, &CTriggerScopeMMDAC::OnState);
+   ret = CreateProperty(MM::g_Keyword_State, "0", MM::Integer, false, pAct); 
+   if (ret != DEVICE_OK) 
+      return ret; 
+
+   AddAllowedValue(MM::g_Keyword_State, "0"); // Closed
+   AddAllowedValue(MM::g_Keyword_State, "1"); // Open
+
+   pAct = new CPropertyAction (this, &CTriggerScopeMMDAC::OnVolts);
+   ret = CreateProperty("Volts", "0", MM::Float, false, pAct);
+   assert(ret == DEVICE_OK);
+   ret = SetPropertyLimits("Volts", minV_, maxV_);
+   if (ret != DEVICE_OK) 
+     return ret;
+
+   pAct = new CPropertyAction (this, &CTriggerScopeMMDAC::OnSequence);
+   ret = CreateProperty("Sequence", g_On, MM::String, false, pAct);
+   if (ret != DEVICE_OK)
+      return ret;
+   AddAllowedValue("Sequence", g_On);
+   AddAllowedValue("Sequence", g_Off);
+
+   std::string sequenceTriggerDirection = "Sequence Trigger Edge";
+   pAct = new CPropertyAction(this, &CTriggerScopeMMDAC::OnSequenceTriggerDirection);
+   ret = CreateProperty(sequenceTriggerDirection.c_str(), g_Rising, MM::String, false, pAct);
+   if (ret != DEVICE_OK)
+      return ret;
+   AddAllowedValue(sequenceTriggerDirection.c_str(), g_Falling);
+   AddAllowedValue(sequenceTriggerDirection.c_str(), g_Rising);
+
+   std::string blankMode = "Blanking";
+   pAct = new CPropertyAction(this, &CTriggerScopeMMDAC::OnBlanking);
+   nRet = CreateProperty(blankMode.c_str(), g_Off, MM::String, false, pAct);
+   if (nRet != DEVICE_OK) 
+      return nRet;
+	AddAllowedValue(blankMode.c_str(), g_Off);
+	AddAllowedValue(blankMode.c_str(), g_On);
+
+   std::string blankOn = "Blank On";
+   pAct = new CPropertyAction(this, &CTriggerScopeMMDAC::OnBlankingTriggerDirection);
+   nRet = CreateProperty(blankOn.c_str(), g_Low, MM::String, false, pAct);
+   if (nRet != DEVICE_OK) 
+      return nRet;
+   AddAllowedValue(blankOn.c_str(), g_Low);
+   AddAllowedValue(blankOn.c_str(), g_High);
+
+   pAct = new CPropertyAction(this, &CTriggerScopeMMDAC::OnODVolts);
+   ret = CreateProperty("OD Volts", "0", MM::Float, false, pAct);
+   ret = SetPropertyLimits("OD Volts", minV_, maxV_);
+   assert(ret == DEVICE_OK);
+
+   pAct = new CPropertyAction(this, &CTriggerScopeMMDAC::OnODDelay);
+   ret = CreateProperty("OD Delay", "0", MM::Float, false, pAct);
+   assert(ret == DEVICE_OK);
+
+   initialized_ = true;
+   return DEVICE_OK;
+}
+
+
+int CTriggerScopeMMDAC::SetGateOpen(bool open)
+{
+   gateOpen_ = open;
+   return SetSignal(volts_);
+}
+
+int CTriggerScopeMMDAC::GetGateOpen(bool &open)
+{
+   open = gateOpen_;
+   return DEVICE_OK;
+}
+
+
+int CTriggerScopeMMDAC::OnState(MM::PropertyBase* pProp, MM::ActionType eAct)
+{
+   if (eAct == MM::BeforeGet)
+   {
+      // return pos as we know it
+      bool open;
+      GetGateOpen(open);
+      if (open)
+      {
+         pProp->Set(1L);
+      }
+      else
+      {
+         pProp->Set(0L);
+      }
+   }
+   else if (eAct == MM::AfterSet)
+   {
+      long pos;
+      pProp->Get(pos);
+      return this->SetGateOpen(pos==1L);
+   }
+   return DEVICE_OK;
+}
+
+
+int CTriggerScopeMMDAC::WriteSignal(double volts)
+{
+   if(volts < minV_)
+      volts = minV_ ;
+   if(volts > maxV_)
+      volts = maxV_ ;
+
+   double dMaxCount = 4095;
+   if(bTS16_)
+      dMaxCount = 65535;
+
+   long value = (long) ( (volts - minV_) / maxV_ * dMaxCount);
+
+   std::ostringstream os;
+   os << "Volts: " << volts << " Max Voltage: " << maxV_ << " digital value: " << value;
+   LogMessage(os.str().c_str(), true);
+
+    
+   char str[32];
+   snprintf(str, 32, "SAO%d-%d", dacNr_, int(value));
+   return pHub_->SendAndReceive(str);
+
+}
+
+int CTriggerScopeMMDAC::SetSignal(double volts)
+{
+   volts_ = volts;
+   if (gateOpen_) 
+   {
+      gatedVolts_ = volts;
+   }
+   else 
+   {
+      gatedVolts_ = 0;
+   }
+   return WriteSignal(gatedVolts_);
+}
+
+
+int CTriggerScopeMMDAC::OnVolts(MM::PropertyBase* pProp, MM::ActionType eAct)
+{
+   pVoltsProp_ = pProp;
+   if (eAct == MM::BeforeGet)
+   {
+      pProp->Set(volts_);
+   }
+   else if (eAct == MM::AfterSet)
+   {
+      pProp->Get(volts_);
+      bool open;
+      GetGateOpen(open);
+      if (open)
+      {
+         WriteSignal(volts_);
+      }
+   } else if (eAct == MM::IsSequenceable)
+   {
+      if (sequenceOn_)
+         pProp->SetSequenceable(nrEvents_);
+      else
+         pProp->SetSequenceable(0);
+   } 
+   else if (eAct == MM::AfterLoadSequence)
+   {
+      std::vector<std::string> sequence = pProp->GetSequence();  
+      // check for invalid values
+      std::ostringstream os;
+      if (sequence.size() > nrEvents_)
+         return DEVICE_SEQUENCE_TOO_LARGE;
+
+      if (seqCleared_ == 0)
+          ClearDASequence(); // also empties sequence_
+
+      double val;
+      for (unsigned int i = 0; i < sequence.size(); i++)
+      {
+          std::istringstream is(sequence[i]);
+          is >> val;
+          // Check range?
+          sequence_.push_back(val);
+      }
+   
+      return SendDASequence();
+   }
+   else if (eAct == MM::StartSequence)
+   { 
+      return StartDASequence();
+    }
+   else if (eAct == MM::StopSequence)
+   {
+      return StopDASequence();
+   } 
+
+
+   return DEVICE_OK;
+}
+
+
+int CTriggerScopeMMDAC::OnVoltRange(MM::PropertyBase* pProp, MM::ActionType eAct)
+{
+   if (eAct == MM::BeforeGet)
+   {
+      pProp->Set(voltRangeS_.c_str());
+   }
+      else if (eAct == MM::AfterSet)
+   {
+      std::string voltR;
+      pProp->Get(voltR);
+      if (voltR == g_DACR1) { voltrange_ = 1; }
+      else if (voltR == g_DACR2) { voltrange_ = 2; }      
+      else if (voltR == g_DACR3) { voltrange_ = 3; }
+      else if (voltR == g_DACR4) { voltrange_ = 4; }
+      else if (voltR == g_DACR5) { voltrange_ = 5; }
+      else 
+         return DEVICE_INVALID_PROPERTY_VALUE;
+
+      voltRangeS_ = voltR;
+
+   }
+
+   return DEVICE_OK;
+}
+
+int CTriggerScopeMMDAC::OnSequence(MM::PropertyBase* pProp, MM::ActionType eAct)
+{
+   if (eAct == MM::BeforeGet)
+   {
+      if (sequenceOn_)
+         pProp->Set(g_On);
+      else
+         pProp->Set(g_Off);
+   }
+   else if (eAct == MM::AfterSet)
+   {
+      std::string state;
+      pProp->Get(state);
+      if (state == g_On)
+         sequenceOn_ = true;
+      else
+         sequenceOn_ = false;
+   }
+   return DEVICE_OK;
+}
+
+
+int CTriggerScopeMMDAC::OnSequenceTriggerDirection(MM::PropertyBase* pProp, MM::ActionType eAct)
+{
+   if (eAct == MM::BeforeGet)
+   {
+      if (sequenceTransitionOnRising_)
+         pProp->Set(g_Rising);
+      else
+         pProp->Set(g_Falling);
+   }
+   else if (eAct == MM::AfterSet)
+   {
+      std::string val;
+      pProp->Get(val);
+      if (val == g_Rising)
+         sequenceTransitionOnRising_ = true;
+      else
+         sequenceTransitionOnRising_ = false;
+   }
+   return DEVICE_OK;
+}
+
+
+int CTriggerScopeMMDAC::OnBlanking(MM::PropertyBase* pProp, MM::ActionType eAct)
+{
+   if (eAct == MM::BeforeGet)
+   {
+      if (blanking_)
+         pProp->Set(g_On);
+      else
+         pProp->Set(g_Off);
+   }
+   else if (eAct == MM::AfterSet)
+   {
+      std::string state;
+      pProp->Get(state);
+      if (state == g_On)
+         blanking_ = true;
+      else
+         blanking_ = false;
+      return SendBlankingCommand();
+   }
+   return DEVICE_OK;
+}
+
+int CTriggerScopeMMDAC::OnBlankingTriggerDirection(MM::PropertyBase* pProp, MM::ActionType eAct)
+{
+   if (eAct == MM::BeforeGet)
+   {
+      if (blankOnLow_)
+         pProp->Set(g_Low);
+      else
+         pProp->Set(g_High);
+   }
+   else if (eAct == MM::AfterSet)
+   {
+      std::string state;
+      pProp->Get(state);
+      if (state == g_Low)
+         blankOnLow_ = true;
+      else
+         blankOnLow_ = false;
+      return SendBlankingCommand();
+   }
+   return DEVICE_OK;
+}
+
+
+
+int CTriggerScopeMMDAC::SendBlankingCommand()
+{   
+   std::ostringstream os;
+   os << "BAO" << (int) dacNr_ << "-" << (blanking_ ? "1" : "0") << 
+               "-" << (blankOnLow_ ? "0" : "1"); 
+   return pHub_->SendAndReceive(os.str().c_str());
+}
+
+
+int CTriggerScopeMMDAC::StartDASequence()
+{
+   seqCleared_ = 0;
+   std::ostringstream os;
+   os << "PAS" << (int) dacNr_ << "-1-" << (sequenceTransitionOnRising_ ? "1" : "0"); 
+   return pHub_->SendAndReceive(os.str().c_str());
+}
+
+int CTriggerScopeMMDAC::StopDASequence()
+{
+   seqCleared_ = 0;
+   std::ostringstream os;
+   os << "PAS" << (int) dacNr_ << "-0-" << (sequenceTransitionOnRising_ ? "1" : "0"); 
+   return pHub_->SendAndReceive(os.str().c_str());
+}
+
+int CTriggerScopeMMDAC::SendDASequence()
+{
+    int value;
+    double dMaxCount = 4095, volts;
+    if (bTS16_)
+        dMaxCount = 65535;
+
+    std::ostringstream os;
+    os.str(std::string());
+    os << "PAO" << (int)dacNr_ << "-" << "0";
+    for (unsigned int i = 0; i < sequence_.size(); i++)
+    {
+        volts = sequence_[i];
+        value = ConvertVoltsToDAC(volts);
+        os << "-" << value;
+    }
+    return pHub_->SendAndReceive(os.str().c_str());
+
+}
+int CTriggerScopeMMDAC::SendDAOVSequence()
+{
+    int value;
+    double dMaxCount = 4095, volts;
+    if (bTS16_)
+        dMaxCount = 65535;
+
+    std::ostringstream os;
+
+    os.str(std::string());
+    os << "POV" << (int)dacNr_ << "-" << "0";
+    for (unsigned int i = 0; i < seqODVolts_.size(); i++)
+    {
+        volts = seqODVolts_[i];
+        value = ConvertVoltsToDAC(volts);
+        os << "-" << value;
+    }
+    return pHub_->SendAndReceive(os.str().c_str());
+    
+}
+int CTriggerScopeMMDAC::SendDAODSequence()
+{
+    int value;
+    double dMaxCount = 65535;
+
+    std::ostringstream os;
+    
+    os.str(std::string());
+    os << "POD" << (int)dacNr_ << "-" << "0";
+    for (unsigned int i = 0; i < seqODDelay_.size(); i++)
+    {
+        value = round(seqODDelay_[i]);
+        os << "-" << value;
+    }
+    return pHub_->SendAndReceive(os.str().c_str());
+    
+}
+
+int CTriggerScopeMMDAC::ClearDASequence()
+{
+    sequence_.clear();
+    seqODDelay_.clear();
+    seqODVolts_.clear();
+    seqCleared_ = 1;
+
+   // clear sequence from the device (as per API documentation)
+   char str[128];
+   snprintf(str, 128, "PAC%d", dacNr_);
+   return pHub_->SendAndReceive(str);
+}
+
+int CTriggerScopeMMDAC::AddToDASequence(double voltage)
+{
+   if (sequence_.size() < nrEvents_)
+      sequence_.push_back(voltage);
+   else 
+      return DEVICE_SEQUENCE_TOO_LARGE;
+
+   return DEVICE_OK;
+}
+
+int CTriggerScopeMMDAC::OnODVolts(MM::PropertyBase* pProp, MM::ActionType eAct)
+{
+    pODVoltsProp_ = pProp;
+
+    if (eAct == MM::BeforeGet)
+    {
+        pProp->Set(ODVolts_);
+    }
+    else if (eAct == MM::AfterSet)
+    {
+        pProp->Get(ODVolts_);
+    }
+    else if (eAct == MM::IsSequenceable)
+    {
+        if (sequenceOn_)
+            pProp->SetSequenceable(nrEvents_);
+        else
+            pProp->SetSequenceable(0);
+    }
+    else if (eAct == MM::AfterLoadSequence)
+    {
+        std::vector<std::string> sequence = pProp->GetSequence();
+        // check for invalid values
+        std::ostringstream os;
+        if (sequence.size() > nrEvents_)
+            return DEVICE_SEQUENCE_TOO_LARGE;
+
+        if (seqCleared_ == 0)
+            ClearDASequence(); // also empties sequence_
+
+        double val;
+        for (unsigned int i = 0; i < sequence.size(); i++)
+        {
+            std::istringstream is(sequence[i]);
+            is >> val;
+            // Check range?
+            seqODVolts_.push_back(val);
+        }
+        return SendDAOVSequence();
+    }
+
+    return DEVICE_OK;
+}
+int CTriggerScopeMMDAC::OnODDelay(MM::PropertyBase* pProp, MM::ActionType eAct)
+{
+    pODDelayProp_ = pProp;
+
+    if (eAct == MM::BeforeGet)
+    {
+        pProp->Set(ODDelay_);
+    }
+    else if (eAct == MM::AfterSet)
+    {
+        pProp->Get(ODDelay_);
+    }
+    else if (eAct == MM::IsSequenceable)
+    {
+        if (sequenceOn_)
+            pProp->SetSequenceable(nrEvents_);
+        else
+            pProp->SetSequenceable(0);
+    }
+    else if (eAct == MM::AfterLoadSequence)
+    {
+        std::vector<std::string> sequence = pProp->GetSequence();
+        // check for invalid values
+        std::ostringstream os;
+        if (sequence.size() > nrEvents_)
+            return DEVICE_SEQUENCE_TOO_LARGE;
+
+        if (seqCleared_ == 0)
+            ClearDASequence(); // also empties sequence_
+
+        double val;
+        for (unsigned int i = 0; i < sequence.size(); i++)
+        {
+            std::istringstream is(sequence[i]);
+            is >> val;
+            // Check range?
+            seqODDelay_.push_back(val);
+        }
+        return SendDAODSequence();
+    }
+    return DEVICE_OK;
+}
+
+int CTriggerScopeMMDAC::ConvertVoltsToDAC(double volts)
+{
+    double dMaxCount = 4095;
+    if (bTS16_)
+        dMaxCount = 65535;
+
+    if (volts < minV_)
+        volts = minV_;
+    if (volts > maxV_)
+        volts = maxV_;
+
+    int  value = (int)((volts - minV_) / maxV_ * dMaxCount);
+    return value;
+}

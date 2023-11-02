@@ -556,6 +556,77 @@ void loop()
       }
     }
 
+  
+    /*
+     *  "WAV"  - Creates a sin wave using the DAC outputs
+          Format: "WAVn-a-f-o", where n is the DAC pinNr (1-16)
+          a - amplitude in absolute digital units, note this is scaled to Volts by the DAC range. 
+          f - frequency of the waveform
+          o - offset in digital absolute units. 
+     */
+    else if(command.startsWith("WAV"))
+{
+    error = false;
+
+    byte dacPin = 0; // Initialize to an error condition
+    int amplitude = 0; // amplitude of the waveform in absolute digital units 0-65535
+    int frequency = 0; // Frequency of the signal in Hz
+    int offsetVal = 0; // offset of signal from 0 in abs digital units. 
+    
+    int firstDashPos = inputString.indexOf("-");
+    int secondDashPos = inputString.indexOf("-", firstDashPos + 1);
+    int thirdDashPos = inputString.indexOf("-",secondDashPos + 1); 
+
+    if (firstDashPos != -1 && secondDashPos != -1 && thirdDashPos != -1)
+    {
+        dacPin = inputString.substring(3, firstDashPos).toInt(); // Extracting pin number from "WAV" to the first dash.
+        amplitude = inputString.substring(firstDashPos + 1, secondDashPos).toInt();
+        frequency = inputString.substring(secondDashPos + 1).toInt();
+        offsetVal = inputString.substring(thirdDashPos + 1).toInt();
+        Serial.print("Got:");
+        Serial.print(amplitude); Serial.print(",");
+        Serial.print(frequency); Serial.print(",");
+        Serial.print(offsetVal); Serial.println();
+        
+    }
+    else
+    {
+        error = true;
+    }
+
+    if (dacPin < 1 || dacPin > 16 || amplitude < 0 || amplitude > 65535 || frequency <= 0 || frequency > 50000 || offsetVal < 0 || (offsetVal + amplitude) > 65535 )
+    {
+        error = true;
+    }
+
+    if (!error)
+    {
+        double angularFrequency = 2.0 * M_PI * frequency;
+        //int numberOfPoints = static_cast<int>(50000 / frequency); // Number of points in one cycle assuming microsecond accuracy. Adjust if needed.
+        int numberOfPoints = 50000; // fixed sampling rate for now TODO needs better solution.
+
+        // TODO make a 1 shot timer and add it here
+        // TODO 
+
+
+
+
+
+
+        
+
+        Serial.print("!WAV"); // print a message to indicate that the sine wave is generated
+        Serial.print(dacPin);
+        Serial.print("-");
+        Serial.print(dacPowerSetting);
+        Serial.print("-");
+        Serial.println(frequency);
+    }
+    else
+    {
+        Serial.println("Error: Invalid WAV command format.");
+    }
+}
 
     /*
      *  "PAC"  - Clears the sequence of ananlog states
@@ -1657,6 +1728,22 @@ void clearDelay()
   Serial.println("!CLEAR_DELAY"); //print recieve message to operator
 }
 
+
+void sweepDac(byte dacPin){
+  // Austin demo wave function creator. 
+  for (int i = 0; i < numberOfPoints; i++)
+        {
+            double sineValue = sin(angularFrequency * i / numberOfPoints);
+            int dacValue = static_cast<int>((sineValue + 1) * amplitude / 2.0); // Map sine value (-1 to 1) to DAC range (0 to dacPowerSetting)
+            setDac(dacPin, dacValue);
+            //dacArray[i][dacPin - 1] = dacValue; // Save the sine wave data into the dacArray
+
+            if (i > dacArrayMaxIndex[dacPin - 1])
+            {
+                dacArrayMaxIndex[dacPin - 1] = i;
+            }
+        }
+}
 
 void setDacRange(byte dacLine, byte range)
 {

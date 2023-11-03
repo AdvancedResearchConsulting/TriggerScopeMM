@@ -610,10 +610,6 @@ void loop()
         samplingRate = inputString.substring(thirdDashPos + 1).toInt();
         offsetVal = inputString.substring(fourthDashPos + 1).toInt();
         delayforwave = inputString.substring(fithDashPos + 1).toInt();
-        Serial.print("Got:");
-        Serial.print(amplitude); Serial.print(",");
-        Serial.print(frequency); Serial.print(",");
-        Serial.print(offsetVal); Serial.println();
     }
     else
     {

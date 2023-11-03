@@ -594,13 +594,11 @@ void loop()
     error = false;
 
     byte dacPin = 0; // Initialize to an error condition
-    int offsetVal = 0; // offset of signal from 0 in abs digital units. 
-    
+
     int firstDashPos = inputString.indexOf("-");
     int secondDashPos = inputString.indexOf("-", firstDashPos + 1);
     int thirdDashPos = inputString.indexOf("-",secondDashPos + 1); 
     int fourthDashPos = inputString.indexOf("-",thirdDashPos + 1); 
-    int fithDashPos = inputString.indexOf("-",fourthDashPos + 1); 
 
     if (firstDashPos != -1 && secondDashPos != -1 && thirdDashPos != -1)
     {
@@ -608,15 +606,14 @@ void loop()
         amplitude = inputString.substring(firstDashPos + 1, secondDashPos).toInt();
         frequency = inputString.substring(secondDashPos + 1).toInt();
         samplingRate = inputString.substring(thirdDashPos + 1).toInt();
-        offsetVal = inputString.substring(fourthDashPos + 1).toInt();
-        delayforwave = inputString.substring(fithDashPos + 1).toInt();
+        delayforwave = inputString.substring(fourthDashPos + 1).toInt();
     }
     else
     {
         error = true;
     }
 
-    if (dacPin < 1 || dacPin > 16 || amplitude < 0 || amplitude > 65535 || frequency <= 0 || frequency > 50000 || samplingRate<0 || samplingRate>500000|| offsetVal < 0 || (offsetVal + amplitude) > 65535 || delayforwave <10 ||delayforwave>50000)
+    if (dacPin < 1 || dacPin > 16 || amplitude < 0 || amplitude > 65535 || frequency <= 0 || frequency > 50000 || samplingRate<0 || samplingRate>500000||delayforwave <10 ||delayforwave>50000)
     {
         error = true;
     }
@@ -637,15 +634,13 @@ void loop()
         Serial.print("-");
         Serial.print(samplingRate);
         Serial.print("-");
-        Serial.print(offsetVal);
-        Serial.print("-");
         Serial.println(delayforwave);
   
     }
     else
     {
         Wavedaclight = false;
-        Serial.println("Error: Invalid WAV command format. Format is: WAV{pin}-{Amplitude}-{Frequency}-{samplingRate}-{Offsetval}-{delayforwave}");
+        Serial.println("Error: Invalid WAV command format. Format is: WAV{pin}-{Amplitude}-{Frequency}-{samplingRate}-{delayforwave}");
     }
 }
 

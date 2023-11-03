@@ -691,55 +691,73 @@ void loop()
     else if (command == "PAS")
     {
       error = false;
-      if (inputString.length() == 9 || inputString.length() == 10)
+      int firstSep = inputString.indexOf(sep); // Find the first occurrence of the separator
+      if (firstSep != -1)
       {
-        error = false;
-        int dacNr = 0;
-        int scp = 4;
-        if (inputString[scp] == sep) { dacNr = inputString.substring(3,scp).toInt(); }
-        else if (inputString[scp+1] == sep) 
+        int dacNr = inputString.substring(3, firstSep).toInt(); // Extract DAC number
+        if (dacNr >= 1 && dacNr <= 16)
         {
-          scp++; 
-          dacNr = inputString.substring(3,scp).toInt(); 
+          int secondSep = inputString.indexOf(sep, firstSep + 1); // Find the second occurrence of the separator
+          if (secondSep != -1)
+          {
+            int state = inputString.substring(firstSep + 1, secondSep).toInt(); // Extract state
+            if (state >= 0 && state <= 1)
+            {
+              int rising = inputString.substring(secondSep + 1).toInt(); // Extract rising
+              if (rising >= 0 && rising <= 1)
+              {
+                // Set values if everything is correct
+                dacSequencing[dacNr - 1] = (boolean)state;
+                dacSequenceMode[dacNr - 1] = rising;
+                if (state)
+                {
+                  dacStoredState[dacNr - 1] = dacState[dacNr - 1];
+                  dacArrayIndex[dacNr - 1] = 0; 
+                  if (!rising) 
+                  {
+                    setDac(dacNr -1, dacArray[dacArrayIndex[dacNr - 1]][dacNr - 1]);
+                    dacArrayIndex[dacNr - 1]++;
+                  }
+                } 
+                else
+                {
+                  dacState[dacNr - 1] = dacStoredState[dacNr - 1];
+                }
+                char out[20];
+                sprintf(out, "!PAS%d%c%d%c%d", dacNr, sep, state, sep, rising);
+                Serial.println(out);
+              }
+              else
+              {
+                error = true;
+              }
+            }
+            else
+            {
+              error = true;
+            }
+          }
+          else
+          {
+            error = true;
+          }
         }
-        if (dacNr < 1 || dacNr > 16 || inputString[scp] != sep)
+        else
         {
           error = true;
         }
-        int state = inputString.substring(scp+1,scp+2).toInt();
-        if (state < 0 || state > 1) { error = true; }
-        int rising = inputString.substring(scp+3).toInt();
-        if (rising < 0 || rising > 1) { error = true; }
-        if (!error)
-        {
-          dacSequencing[dacNr - 1] = (boolean) state;
-          dacSequenceMode[dacNr - 1] = rising;
-          if (state)
-          {
-            dacStoredState[dacNr - 1] = dacState[dacNr - 1];
-            dacArrayIndex[dacNr - 1] = 0; 
-            if (!rising) { // if we trigger on the falling edge, set initial state now, and advance counter here
-              setDac(dacNr -1, dacArray[dacArrayIndex[dacNr - 1]][dacNr - 1]); // Check blanking?
-              dacArrayIndex[dacNr - 1]++;
-            }
-          } else
-          {
-            dacState[dacNr - 1] = dacStoredState[dacNr - 1];
-          }
-          char out[20];
-          sprintf(out, "!PAS%d%c%d%c%d", dacNr, sep, state, sep, rising);
-          Serial.println(out);
-        }
-      } else 
+      }
+      else
       {
         error = true;
       }
+      
       if (error)
       {
         Serial.println(pasErrorString);
       }
-       
     }
+
 
     /*
     "BAO"  - Activates blanking mode of the analog output.  Output state will be coupled to the 

@@ -373,7 +373,7 @@ void loop()
   }
   */
 
-  if (triggerPinState != digitalReadFast(trig[0]))
+  if (triggerPinState != digitalReadFast(trig[0])) // if a trigger is detected
   {
     triggerPinState = ! triggerPinState;
     if (useSignalLEDs_)
@@ -382,11 +382,11 @@ void loop()
     }
     for (byte i = 0; i < NR_DACS; i++) // todo: optimize by ordering an array with sequenceable DACS and only cycle through those
     {
-      if (dacSequencing[i])
+      if (dacSequencing[i]) // if DAC sequencing is ON
       {
         if (dacSequenceMode[i] == triggerPinState)
         {
-          dacState[i] = dacArray[dacArrayIndex[i]][i];
+          dacState[i] = dacArray[dacArrayIndex[i]][i]; //Garrett todo -> this pulls the "programmed sequence value" from the DAC array list. 
           dacArrayIndex[i]++;
           if (dacArrayIndex[i] == dacArrayMaxIndex[i]) { dacArrayIndex[i] = 0; }
           if (!dacBlanking[i])
@@ -395,7 +395,8 @@ void loop()
               Motorforsweep = i;    //Sets global motor to use in the sinwave stuff.
               //setDac(i, dacState[i]); TODO austin disabled for development
               useSignalLEDs_ = false;
-              Oneshot.begin([] { SineWavetimer(); }, delayforwave);    // One-Shot timer for waves, this is to allow for non-blocking code of the waves
+              amplitude = dacState[i];  //This sets the wave amplitude to the programmed value(0-65535)
+              Oneshot.begin([] { SineWavetimer(); }, delayforwave);    // One-Shot timer for waves, this is to allow for non-blocking code of the waves   (TODO: Add the amplitude change for the programmed sequnce here)
               //sweepDac(i);
             }
             else{

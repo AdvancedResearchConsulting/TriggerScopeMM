@@ -276,6 +276,9 @@ int delayforwave = 10;   //time to wait for wave generation after singal detecte
 // One-shot timer
 IntervalTimer Oneshot;
 
+int offsetsine;   //Set the offset for the sinewave
+
+
 int Motorforsweep;
 bool Wavedaclight; //turns on the dac light when the dac signal is a wave form
 
@@ -590,19 +593,41 @@ void loop()
           f - frequency of the waveform
           o - offset in digital absolute units. 
      */
+    else if(command.startsWith("OFS")){
+      byte dacPin = 0; // Initialize to an error condition
+      int firstDashPos1 = inputString.indexOf("-");
+      dacPin = inputString.substring(3, firstDashPos1).toInt(); // Extracting pin number from "OFS" to the first dash.
+      offsetsine = inputString.substring(firstDashPos1 + 1).toInt(); //Number to set the offset to in the wave generation
+      if (dacPin < 1 || dacPin > 16 || offsetsine <0 || offsetsine >65535)
+    {
+        error = true;
+    }
+    if (!error)
+    {
+        Serial.print("!OFS"); // print a message to indicate that the sine wave is generated
+        Serial.print(dacPin);
+        Serial.print("-");
+        Serial.println(offsetsine);
+    }
+    else
+    {
+        Serial.println("Error: Invalid OFS command format. Format is: OFS{DacPin}-{Offset}");
+    }
+    }
+
     else if(command.startsWith("WAV"))
 {
     error = false;
 
     byte dacPin = 0; // Initialize to an error condition
-
+    
     int firstDashPos = inputString.indexOf("-");
     int secondDashPos = inputString.indexOf("-", firstDashPos + 1);
     int thirdDashPos = inputString.indexOf("-",secondDashPos + 1); 
     int fourthDashPos = inputString.indexOf("-",thirdDashPos + 1); 
-
     if (firstDashPos != -1 && secondDashPos != -1 && thirdDashPos != -1)
     {
+        
         dacPin = inputString.substring(3, firstDashPos).toInt(); // Extracting pin number from "WAV" to the first dash.
         amplitude = inputString.substring(firstDashPos + 1, secondDashPos).toInt();
         frequency = inputString.substring(secondDashPos + 1).toInt();
@@ -635,13 +660,12 @@ void loop()
         Serial.print("-");
         Serial.print(samplingRate);
         Serial.print("-");
-        Serial.println(delayforwave);
-  
+        Serial.print(delayforwave);
     }
     else
     {
         Wavedaclight = false;
-        Serial.println("Error: Invalid WAV command format. Format is: WAV{pin}-{Amplitude}-{Frequency}-{samplingRate}-{delayforwave}");
+        Serial.println("Error: Invalid WAV command format. Format is: WAV{pin}-{Amplitude}-{Frequency}-{samplingRate}-{delayforwave}-{offsetsine}");
     }
 }
 
@@ -1770,11 +1794,31 @@ void clearDelay()
 // 
 void sweepDac(byte dacPin){
   // Austin demo wave function creator. 
-  
+  // Calculate the upper and lower bounds to ensure we don't roll over
+  int upperBound = 65535;
+  int lowerBound = 0;
+
   for (int i = 0; i < numberOfPoints; i++)
   {
       double sineValue = sin(angularFrequency * i / samplingRate);
-      int dacValue = static_cast<int>((sineValue + 1) * amplitude / 2.0);
+      // Scale sineValue to go from -amplitude/2 to amplitude/2
+      //sineValue *= amplitude / 2.0;
+      // Then shift the sine wave up by the offset
+      int dacValue = 0;
+      if(offsetsine == 0){
+        dacValue =  static_cast<int>(amplitude/2+ ((sineValue + 1) * amplitude / 2.0)); 
+      }
+      else if (offsetsine != 0){
+        dacValue = static_cast<int>((sineValue + 1) * amplitude / 2.0 + offsetsine);
+      }
+
+      // Clip the dacValue without rollover
+      if (dacValue > upperBound) {
+        dacValue = upperBound;
+      } else if (dacValue < lowerBound) {
+        dacValue = lowerBound;
+      }
+
       setDac(dacPin, dacValue);
   }
 }

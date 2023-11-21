@@ -277,7 +277,7 @@ int delayforwave = 10;   //time to wait for wave generation after singal detecte
 IntervalTimer Oneshot;
 
 int offsetsine;   //Set the offset for the sinewave
-
+int negativeval;   //Offset helper for if negative offset
 
 int Motorforsweep;
 bool Wavedaclight; //turns on the dac light when the dac signal is a wave form
@@ -557,6 +557,13 @@ void loop()
           if ( (ecp - scp) > 1)
           {
             int val = inputString.substring(scp, ecp).toInt();
+            if (offsetsine != 0){
+             /*
+              if (val > offsetsine){
+                val = offsetsine; 
+              }
+              */
+            }
             if (val < 0 || val > 65535)
             {
               error = true;
@@ -596,6 +603,7 @@ void loop()
     else if(command.startsWith("OFS")){
       byte dacPin = 0; // Initialize to an error condition
       int firstDashPos1 = inputString.indexOf("-");
+      int secondDashPos1 = inputString.indexOf("-", firstDashPos1 + 1);
       dacPin = inputString.substring(3, firstDashPos1).toInt(); // Extracting pin number from "OFS" to the first dash.
       offsetsine = inputString.substring(firstDashPos1 + 1).toInt(); //Number to set the offset to in the wave generation
       if (dacPin < 1 || dacPin > 16 || offsetsine <0 || offsetsine >65535)
@@ -607,7 +615,7 @@ void loop()
         Serial.print("!OFS"); // print a message to indicate that the sine wave is generated
         Serial.print(dacPin);
         Serial.print("-");
-        Serial.println(offsetsine);
+        Serial.print(offsetsine);
     }
     else
     {
@@ -661,11 +669,12 @@ void loop()
         Serial.print(samplingRate);
         Serial.print("-");
         Serial.print(delayforwave);
+
     }
     else
     {
         Wavedaclight = false;
-        Serial.println("Error: Invalid WAV command format. Format is: WAV{pin}-{Amplitude}-{Frequency}-{samplingRate}-{delayforwave}-{offsetsine}");
+        Serial.println("Error: Invalid WAV command format. Format is: WAV{pin}-{Amplitude}-{Frequency}-{samplingRate}-{delayforwave}");
     }
 }
 
@@ -1806,10 +1815,10 @@ void sweepDac(byte dacPin){
       // Then shift the sine wave up by the offset
       int dacValue = 0;
       if(offsetsine == 0){
-        dacValue =  static_cast<int>(amplitude/2+ ((sineValue + 1) * amplitude / 2.0)); 
+        dacValue =  static_cast<int>((sineValue+1) * amplitude / 2.0); 
       }
       else if (offsetsine != 0){
-        dacValue = static_cast<int>((sineValue + 1) * amplitude / 2.0 + offsetsine);
+        dacValue = static_cast<int>((amplitude*(sineValue))+offsetsine);
       }
 
       // Clip the dacValue without rollover

@@ -399,9 +399,10 @@ void loop()
                 setDac(i, dacState[i]);
             }
         }
-        else if ((dacSequenceMode[i] >= triggerPinState) && (waveSettings[i].amplitude != 0)) // if using a waveform. 
+        else if ((dacSequenceMode[i] >= 0) && (waveSettings[i].amplitude != 0)) // if using a waveform. 
         {
-            executeWaveformOutput(i); // should output the wave!
+            if(triggerPinState == dacSequenceMode[i] || dacSequenceMode[i] > 1){executeWaveformOutput(i);} // should output the wave!
+            
             if ( (dacSequenceMode[i] == 2 && !digitalReadFast(trig[0])) || (dacSequenceMode[i] == 3 && digitalReadFast(trig[0]) )) {triggerPinState = ! triggerPinState;} // if high continuous or low continuous, reset the pin state. 
         }
 
@@ -653,7 +654,7 @@ void loop()
           {
             dacStoredState[dacNr - 1] = dacState[dacNr - 1];
             dacArrayIndex[dacNr - 1] = 0; 
-            if (rising == 0 || rising == 2) { // if we trigger on the falling edge, set initial state now, and advance counter here
+            if (rising == 0 || rising == 2) { // if we trigger on the falling or LOW edge, set initial state now, and advance counter here
               setDac(dacNr -1, dacArray[dacArrayIndex[dacNr - 1]][dacNr - 1]); // Check blanking?
               dacArrayIndex[dacNr - 1]++;
             }
@@ -661,6 +662,7 @@ void loop()
           {
             dacState[dacNr - 1] = dacStoredState[dacNr - 1];
           }
+          if(rising == 2){ triggerPinState = !digitalReadFast(trig[0]); } // if set to active LOW, set the trigger to fire initially. 
           char out[20];
           sprintf(out, "!PAS%d%c%d%c%d", dacNr, sep, state, sep, rising);
           Serial.println(out);

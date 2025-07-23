@@ -6,8 +6,11 @@ V4 Firmware for Triggerscope using Micromanager Driver Developed by Nico Stuurma
 and example of this would be the following commands to generate a 10ms square wave at 50% duty cycle. 
 
 'PDC0',         # clear prior settings
+
 'PDO0-1-1',     # assign output bank 0 (pins 0-8) a value of 1, meaning pin 1.
+
 'PDD-10000',    # use a delay of 10mS
+
 'PDS0-1-2'      # begin transitions
 
 -Austin

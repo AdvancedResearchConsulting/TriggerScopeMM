@@ -1,11 +1,13 @@
 # TriggerScopeMM
 V4 Firmware for Triggerscope using Micromanager Driver Developed by Nico Stuurman
 
-***Be careful which firmware is used! 
-# 1932-1970 should use Nico's Direct branch here -> https://github.com/micro-manager/TriggerScopeMM/tree/main/src/TriggerScope_V3
-# 1971-2117 should use the -612 folder in this repo.
-# 2117 + should use the -620 folder in this repo. 
+*This branch is custom. It's based on vurrent 620. The only change is that using PDD you can now set delays for transitions on digital pins. 
+*to enable this delay use transition state change == 2 for pin group to control. 
+and example of this would be the following commands to generate a 10ms square wave at 50% duty cycle. 
 
-Firmware for the Triggerscope 4 & 4-B. 
-Please check the official Firmware repo maintained by Nico here for updates - https://github.com/micro-manager/TriggerScopeMM
+'PDC0',         # clear prior settings
+'PDO0-1-1',     # assign output bank 0 (pins 0-8) a value of 1, meaning pin 1.
+'PDD-10000',    # use a delay of 10mS
+'PDS0-1-2'      # begin transitions
+
 -Austin

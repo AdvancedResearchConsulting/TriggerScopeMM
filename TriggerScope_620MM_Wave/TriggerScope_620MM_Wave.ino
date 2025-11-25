@@ -385,6 +385,7 @@ void loop()
     {
       digitalWriteDirect(trigLed, triggerPinState);
     }
+    boolean waveRun = false;
     for (byte i = 0; i < NR_DACS; i++) // todo: optimize by ordering an array with sequenceable DACS and only cycle through those
     {
       if (dacSequencing[i])
@@ -401,7 +402,7 @@ void loop()
         }
         else if ((dacSequenceMode[i] >= 0) && (waveSettings[i].amplitude != 0)) // if using a waveform. 
         {
-            if(triggerPinState == dacSequenceMode[i] || dacSequenceMode[i] > 1){executeWaveformOutput(i);} // should output the wave!
+            if(triggerPinState == dacSequenceMode[i] || dacSequenceMode[i] > 1){if(!waveRun){executeWaveformOutput(); waveRun = true;}} // should output the wave!
             
             if ( (dacSequenceMode[i] == 2 && !digitalReadFast(trig[0])) || (dacSequenceMode[i] == 3 && digitalReadFast(trig[0]) )) {triggerPinState = ! triggerPinState;} // if high continuous or low continuous, reset the pin state. 
         }
@@ -1312,55 +1313,42 @@ void serialEvent() {
   }
 }
 
-void executeWaveformOutput(int dacPin)
-{
-  bool db = false;
-  // Validate the DAC channel.
-  
-  if (db){
-    Serial.print("Dac:");
-    Serial.print(dacPin);
-  }
-  if (dacPin < 0 || dacPin > NR_DACS)
-    return;
+void executeWaveformOutput() {
+    // detect which DACs have waveform enabled
+    byte active[NR_DACS];
+    int nActive = 0;
 
-  int index = dacPin;
-  int amplitude       = waveSettings[index].amplitude;
-  int offset          = waveSettings[index].offset;
-  int updatesPerCycle = waveSettings[index].updatesPerCycle;
-  int updateDelay     = waveSettings[index].updateDelay;
+    for (byte i = 0; i < NR_DACS; i++) {
+        if (dacSequencing[i] && waveSettings[i].amplitude != 0) {
+            active[nActive++] = i;
+        }
+    }
 
-  if (db){
-    Serial.print(" index:"); Serial.print(index);
-    Serial.print(" amplitude:"); Serial.print(amplitude);
-    Serial.print(" offset"); Serial.print(offset);
-    Serial.print(" updatesPerCycle"); Serial.println(updatesPerCycle);
-  }
-  
-  // Loop through one complete sine wave cycle.
-  for (int i = 0; i < updatesPerCycle; i++) {
-    // Calculate the angle in radians for this step.
-    float angle = (2 * PI * i) / updatesPerCycle;
+    if (nActive == 0) return;
 
-    // Compute the sine value (range: -1 to +1).
-    float sineValue = sin(angle);
+    // timing parameters (shared)
+    int steps = waveSettings[active[0]].updatesPerCycle;
+    int delayUS = waveSettings[active[0]].updateDelay;
 
-    // Scale the sine value using amplitude and add the offset.
-    int dacValue = offset + (int)(amplitude * sineValue);
+    // run all waveforms interleaved in one loop:
+    for (int k = 0; k < steps; k++) {
+        float angle = (2 * PI * k) / (float)steps;
+        float s = sinf(angle);
 
-    // Constrain the value to valid DAC range (0 to 65535).
-    if (dacValue < 0)
-      {dacValue = 0;}
-    if (dacValue > 65535)
-      {dacValue = 65535;}
+        for (int j = 0; j < nActive; j++) {
+            byte d = active[j];
 
-    // Call your existing function to update the DAC.
-    // Note: setDac() expects a 0-indexed channel.
-    setDac(dacPin, dacValue);
-    
-    // Wait for the specified delay before the next update.
-    if(updateDelay > 0){delayMicroseconds(updateDelay);}
-  }
+            int val = waveSettings[d].offset +
+                      (int)(waveSettings[d].amplitude * s);
+
+            if (val < 0) val = 0;
+            if (val > 65535) val = 65535;
+
+            setDac(d, val);      // update all DACs EACH STEP
+        }
+
+        if (delayUS > 0) delayMicroseconds(delayUS);
+    }
 }
 
   

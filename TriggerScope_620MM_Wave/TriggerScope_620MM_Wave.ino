@@ -1313,43 +1313,60 @@ void serialEvent() {
   }
 }
 
-void executeWaveformOutput() {
-    // detect which DACs have waveform enabled
-    byte active[NR_DACS];
-    int nActive = 0;
+void executeWaveformOutput()
+{
+  // Collect all active waveform DACs
+  byte active[NR_DACS];
+  int  nActive = 0;
 
-    for (byte i = 0; i < NR_DACS; i++) {
-        if (dacSequencing[i] && waveSettings[i].amplitude != 0) {
-            active[nActive++] = i;
-        }
+  for (byte i = 0; i < NR_DACS; i++) {
+    if (dacSequencing[i] && waveSettings[i].amplitude != 0) {
+      active[nActive++] = i;
+    }
+  }
+  if (nActive == 0) return;
+
+  // Find the maximum number of steps (the densest/slowest waveform)
+  int maxSteps = 0;
+  for (int j = 0; j < nActive; j++) {
+    int steps = waveSettings[active[j]].updatesPerCycle;
+    if (steps > maxSteps) maxSteps = steps;
+  }
+  if (maxSteps <= 0) return;
+
+  // Use a shared delay for now (from first active DAC)
+  int updateDelay = waveSettings[active[0]].updateDelay;
+
+  for (int step = 0; step < maxSteps; ++step) {
+
+    for (int j = 0; j < nActive; ++j) {
+      byte d  = active[j];
+      WaveSettings &ws = waveSettings[d];
+
+      int stepsForThisDac = ws.updatesPerCycle;
+      if (stepsForThisDac <= 0) continue;
+
+      // Clamp the effective index so we "freeze" after the last step
+      int sampleIndex =
+          (step < stepsForThisDac) ? step : (stepsForThisDac - 1);
+
+      float angle   = (2.0f * PI * sampleIndex) / (float)stepsForThisDac;
+      float s       = sinf(angle);
+      int   dacVal  = ws.offset + (int)(ws.amplitude * s);
+
+      if (dacVal < 0)      dacVal = 0;
+      if (dacVal > 65535)  dacVal = 65535;
+
+      // Always write, even when "frozen", to keep SPI load constant
+      setDac(d, dacVal);
     }
 
-    if (nActive == 0) return;
-
-    // timing parameters (shared)
-    int steps = waveSettings[active[0]].updatesPerCycle;
-    int delayUS = waveSettings[active[0]].updateDelay;
-
-    // run all waveforms interleaved in one loop:
-    for (int k = 0; k < steps; k++) {
-        float angle = (2 * PI * k) / (float)steps;
-        float s = sinf(angle);
-
-        for (int j = 0; j < nActive; j++) {
-            byte d = active[j];
-
-            int val = waveSettings[d].offset +
-                      (int)(waveSettings[d].amplitude * s);
-
-            if (val < 0) val = 0;
-            if (val > 65535) val = 65535;
-
-            setDac(d, val);      // update all DACs EACH STEP
-        }
-
-        if (delayUS > 0) delayMicroseconds(delayUS);
+    if (updateDelay > 0) {
+      delayMicroseconds(updateDelay);
     }
+  }
 }
+
 
   
 void debug()

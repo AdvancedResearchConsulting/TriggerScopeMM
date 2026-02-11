@@ -180,7 +180,7 @@ boolean trigArmed=false;    //enables while loop for just the high speed trig se
 unsigned long debugT=0;     //debugger flag - not used in a few versions
 unsigned long trigInterval; //tracks frequency of inputs from camera or external source
 int trigStep=0;             //optionally used to sequence more than 1 PROG line at a time, not fully implemented
-String inputString = "";         // a string to hold incoming data
+String inputString = "";          // a string to hold incoming data
 boolean stringComplete = false;  // whether the string is complete
 
 //PIN ASSIGNMENTS

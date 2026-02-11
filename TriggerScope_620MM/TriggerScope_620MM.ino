@@ -225,6 +225,7 @@ bool triggerPinState = false;
 int    delArray[500]; //time delay array for high speed sequences
 int    focArray[6]; //array for focus stacks = start, step, #loops,direction,slave,current step
 uint16_t ttlState = 0;
+long pulseCounter = 0;
 // boolean ttlActive[16]={0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
 int timeCycles = 1; //used for high speed switching inside of a loop
 int runCycles = 0; //holds running position vs total cycles for timelapse
@@ -298,7 +299,7 @@ void setup()
   //configureTrigger(trigMode); //will attach interrupt
   for(byte i=0;i<16;++i) { pinMode(ttl[i],OUTPUT); digitalWrite(ttl[i],LOW); } //SET OUTPUT PINS ON TTL AND CAMERA LINES
 
-   Serial.begin(115200); // start serial @ 115,200 baud
+  Serial.begin(115200); // start serial @ 115,200 baud
   while (!Serial) { ; } // wait for serial port
 
   //read from SD card
@@ -407,6 +408,18 @@ void loop()
       }
     }
 
+    // additions for enabling a pulse on TTL 10
+    if (dacState[9] > 0 && digitalReadFast(trig[0])){ //assume counter is operational
+      
+      pulseCounter += 1;
+      if (pulseCounter == (dacState[9])) {digitalWriteFast(ttl[9],HIGH);  } // enable pulse
+      else if (pulseCounter > (dacState[9])) {
+        digitalWriteFast(ttl[9],LOW); //disable pulse
+        pulseCounter = 0;  //retet counter
+        dacState[9] =0;  // disable tracking
+      } 
+    }
+  
    
   }
       
@@ -462,6 +475,9 @@ void loop()
         Serial.print(sep);
         Serial.println(value);
         dacState[dacNum - 1] = value;
+        if (dacNum == 10){
+          pulseCounter = 0;
+        } 
         setDacCheckBlanking(dacNum - 1);
       } else 
       {

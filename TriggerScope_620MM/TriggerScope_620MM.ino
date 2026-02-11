@@ -1214,17 +1214,14 @@ void setDac(byte dNum,int dVal)
 {  
   dac_write(10,0, dNum, dVal); // Send dac_code
   //led indication
-  for (byte d=0; d < 16; d++) 
-  {
-    if (dacState[dNum] > 0) 
-    {
-      digitalWrite(dacLed, 1);
-      return;
-    }
-  }
   if (useSignalLEDs_)
   {
-    digitalWrite(dacLed, 0);
+    int dacSum = 0;
+    for (byte d=0; d < 16; d++)
+    {
+      dacSum += dacState[d];
+    }
+    digitalWrite(dacLed, dacSum > 0);
   }
 }
 
@@ -1549,7 +1546,7 @@ void diagTest()
  */
 void generateDacBlankEvents()
 {
-  
+  /*
 int    dacArray[NR_DAC_STATES][NR_DACS] = {{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}}; // DACprogram list
 uint8_t ttlArray[NR_DO_STATES][2] = {{0,0}}; // digital output states program list
 int ttlArrayMaxIndex[2] = {0, 0}; // maintains the max index in the array that was set
@@ -1571,7 +1568,7 @@ uint32_t dacBlankEventNextWait[2 * NR_DACS] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 uint8_t dacBlankEventPinNr[2 * NR_DACS] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
 // 0 : off, 1: set normal state, 2: set value from dacArray
 uint8_t dacBlankEventState[2 * NR_DACS] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
-  
+  */
 
   // note: this should probably be duplicated for both trigger directions, ignore now for simplicity
   
